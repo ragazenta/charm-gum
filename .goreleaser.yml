@@ -1,11 +1,75 @@
-includes:
-  - from_url:
-      url: charmbracelet/meta/main/goreleaser-full.yaml
+project_name: gum
 
-variables:
-  main: "."
-  description: "A tool for glamorous shell scripts"
-  github_url: "https://github.com/charmbracelet/gum"
-  maintainer: "Maas Lalani <maas@charm.sh>"
-  brew_commit_author_name: "Maas Lalani"
-  brew_commit_author_email: "maas@charm.sh"
+before:
+  hooks:
+    - go mod tidy
+    - rm -rf completions
+    - mkdir completions
+    - rm -rf manpages
+    - mkdir manpages
+    - sh -c 'go run . completion "bash" >./completions/{{ .ProjectName }}.bash'
+    - sh -c 'go run . completion "zsh" >./completions/{{ .ProjectName }}.zsh'
+    - sh -c 'go run . completion "fish" >./completions/{{ .ProjectName }}.fish'
+    - sh -c 'go run . man | gzip -c >./manpages/{{ .ProjectName }}.1.gz'
+
+gomod:
+  proxy: false
+
+builds:
+  - binary: "gum"
+    env:
+      - CGO_ENABLED=0
+    main: "."
+    ldflags: -s -w -X main.Version=v{{ .Version }} -X main.CommitSHA={{ .Commit }} -X main.CommitDate={{ .CommitDate }}
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - "6"
+      - "7"
+
+archives:
+  - format_overrides:
+      - goos: windows
+        format: zip
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- with .Arm}}v{{ . }}{{ end }}
+    files:
+      - README*
+      - LICENSE*
+      - manpages/*
+      - completions/*
+
+nfpms:
+  - vendor: charmbracelet
+    homepage: "https://charm.sh/"
+    maintainer: "Maas Lalani <maas@charm.sh>"
+    description: "A tool for glamorous shell scripts"
+    file_name_template: >-
+      {{- trimsuffix .ConventionalFileName .ConventionalExtension -}}
+      {{- if and (eq .Arm "6") (eq .ConventionalExtension ".deb") }}6{{ end -}}
+      {{- .ConventionalExtension -}}
+    license: MIT
+    formats:
+      - deb
+    contents:
+      - src: ./completions/{{ .ProjectName }}.bash
+        dst: /etc/bash_completion.d/{{ .ProjectName }}
+      - src: ./completions/{{ .ProjectName }}.fish
+        dst: /usr/share/fish/vendor_completions.d/{{ .ProjectName }}.fish
+      - src: ./completions/{{ .ProjectName }}.zsh
+        dst: /usr/share/zsh/site-functions/_{{ .ProjectName }}
+      - src: ./manpages/{{ .ProjectName }}.1.gz
+        dst: /usr/share/man/man1/{{ .ProjectName }}.1.gz
+
+source:
+  enabled: true
